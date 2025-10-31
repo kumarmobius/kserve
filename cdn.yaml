@@ -1,0 +1,154 @@
+name: CDN Download Files
+description: Downloads handler.py, trained_model.pth, config.properties, and tokenizer.json files from CDN URLs and saves them locally with proper directory structure.
+inputs:
+  - {name: handler_url, type: String, description: "URL to fetch the handler.py file from"}
+  - {name: pth_url, type: String, description: "URL to fetch the trained_model.pth model file from"}
+  - {name: config_url, type: String, description: "URL to fetch the config.properties file from"}
+  - {name: tokenizer_url, type: String, description: "URL to fetch the tokenizer.json file from"}
+outputs:
+  - {name: handler_file, type: String, description: "Downloaded handler.py file"}
+  - {name: pth_file, type: Model, description: "Downloaded trained_model.pth model file"}
+  - {name: config_file, type: String, description: "Downloaded config.properties file"}
+  - {name: tokenizer_file, type: String, description: "Downloaded tokenizer.json file"}
+implementation:
+  container:
+    image: nikhilv215/nesy-factory:v22
+    command:
+      - sh
+      - -c
+      - |
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet requests || \
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet requests --user
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |
+        import argparse
+        import os
+        import requests
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--handler_url', type=str, required=True)
+        parser.add_argument('--handler_file', type=str, required=True)
+        parser.add_argument('--pth_url', type=str, required=True)
+        parser.add_argument('--pth_file', type=str, required=True)
+        parser.add_argument('--config_url', type=str, required=True)
+        parser.add_argument('--config_file', type=str, required=True)
+        parser.add_argument('--tokenizer_url', type=str, required=True)
+        parser.add_argument('--tokenizer_file', type=str, required=True)
+
+        args = parser.parse_args()
+
+        print("Received handler_url:", args.handler_url)
+        print("Received pth_url:", args.pth_url)
+        print("Received config_url:", args.config_url)
+        print("Received tokenizer_url:", args.tokenizer_url)
+
+        try:
+            # Download handler.py
+            print("Fetching handler.py from CDN:", args.handler_url)
+            resp_handler = requests.get(args.handler_url, timeout=120)
+            resp_handler.raise_for_status()
+
+            os.makedirs(args.handler_file, exist_ok=True)
+            handler_path = os.path.join(args.handler_file, 'handler.py')
+            with open(handler_path, "w", encoding='utf-8') as f:
+                f.write(resp_handler.text)
+            print("Handler file saved at:", handler_path)
+            print("Handler size:", len(resp_handler.text), "characters")
+
+            # Download trained_model.pth model file
+            print("Fetching trained_model.pth from CDN:", args.pth_url)
+            resp_pth = requests.get(args.pth_url, timeout=300)
+            resp_pth.raise_for_status()
+
+            os.makedirs(args.pth_file, exist_ok=True)
+            pth_path = os.path.join(args.pth_file, 'trained_model.pth')
+            with open(pth_path, "wb") as f:
+                f.write(resp_pth.content)
+            print("PTH model file saved at:", pth_path)
+            print("PTH model size:", len(resp_pth.content), "bytes")
+
+            # Download config.properties
+            print("Fetching config.properties from CDN:", args.config_url)
+            resp_config = requests.get(args.config_url, timeout=120)
+            resp_config.raise_for_status()
+
+            os.makedirs(args.config_file, exist_ok=True)
+            config_path = os.path.join(args.config_file, 'config.properties')
+            with open(config_path, "w", encoding='utf-8') as f:
+                f.write(resp_config.text)
+            print("Config file saved at:", config_path)
+            print("Config size:", len(resp_config.text), "characters")
+
+            # Download tokenizer.json
+            print("Fetching tokenizer.json from CDN:", args.tokenizer_url)
+            resp_tokenizer = requests.get(args.tokenizer_url, timeout=120)
+            resp_tokenizer.raise_for_status()
+
+            os.makedirs(args.tokenizer_file, exist_ok=True)
+            tokenizer_path = os.path.join(args.tokenizer_file, 'tokenizer.json')
+            # treat tokenizer as text/json (write text)
+            with open(tokenizer_path, "w", encoding='utf-8') as f:
+                f.write(resp_tokenizer.text)
+            print("Tokenizer file saved at:", tokenizer_path)
+            print("Tokenizer size:", len(resp_tokenizer.text), "characters")
+
+            print("All files downloaded successfully!")
+            print("Output structure:")
+            print("  - handler_file/handler.py")
+            print("  - pth_file/trained_model.pth")
+            print("  - config_file/config.properties")
+            print("  - tokenizer_file/tokenizer.json")
+
+            # Verify files exist and have content
+            if os.path.exists(handler_path) and os.path.getsize(handler_path) > 0:
+                print("handler.py downloaded and verified")
+            else:
+                raise Exception("handler.py download verification failed")
+
+            if os.path.exists(pth_path) and os.path.getsize(pth_path) > 0:
+                print("trained_model.pth downloaded and verified")
+            else:
+                raise Exception("trained_model.pth download verification failed")
+
+            if os.path.exists(config_path) and os.path.getsize(config_path) > 0:
+                print("config.properties downloaded and verified")
+            else:
+                raise Exception("config.properties download verification failed")
+
+            if os.path.exists(tokenizer_path) and os.path.getsize(tokenizer_path) > 0:
+                print("tokenizer.json downloaded and verified")
+            else:
+                raise Exception("tokenizer.json download verification failed")
+
+        except requests.exceptions.Timeout:
+            print("Error: Request timed out while downloading from CDN")
+            exit(1)
+        except requests.exceptions.RequestException as e:
+            print("Error: Network error during download:", str(e))
+            exit(1)
+        except Exception as e:
+            print("Error: Failed to download files:", str(e))
+            import traceback
+            traceback.print_exc()
+            exit(1)
+
+    args:
+      - --handler_url
+      - {inputValue: handler_url}
+      - --handler_file
+      - {outputPath: handler_file}
+      - --pth_url
+      - {inputValue: pth_url}
+      - --pth_file
+      - {outputPath: pth_file}
+      - --config_url
+      - {inputValue: config_url}
+      - --config_file
+      - {outputPath: config_file}
+      - --tokenizer_url
+      - {inputValue: tokenizer_url}
+      - --tokenizer_file
+      - {outputPath: tokenizer_file}
