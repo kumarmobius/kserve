@@ -7,7 +7,7 @@ inputs:
   - {name: handler_file, type: String, description: "Directory containing handler.py"}
   - {name: tokenizer_json, type: Model, description: "Artifact dir containing tokenizer.json"}
   - {name: model_pth_file, type: Model, description: "Artifact dir containing trained weights (*.pth/*.pt)"}
-  - {name: config_properties, type: Data, description: "Artifact dir or file for config.properties"}
+  - {name: config_properties, type: String, description: "Artifact dir or file for config.properties"}
   - {name: model_name, type: String, default: "gptneox", description: "Name for the MAR"}
   - {name: model_version, type: String, default: "1.0", description: "Version for the MAR"}
 outputs:
