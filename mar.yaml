@@ -1,17 +1,17 @@
-name: GPTNeoX MAR File
+name: GPTNeoX MAR
 description: |
-  Creates a TorchServe .mar using handler.py, model.pth, tokenizer.json. 
+  Creates a TorchServe .mar using handler.py, model.pth, and tokenizer.json.
   Generates model.py (+ model_config.json) via nesy_factory.language_model.gptneox.GPTNeoXBuilder.
-  Also stages config/config.properties beside the MAR for KServe.
+  Stages config/config.properties next to the MAR for KServe.
 inputs:
-  - {name: handler_file, type: String, description: "Directory that contains handler.py"}
+  - {name: handler_file, type: String, description: "Directory containing handler.py"}
   - {name: tokenizer_json, type: Model, description: "Path to tokenizer.json"}
   - {name: model_pth_file, type: Model, description: "Path to trained weights (e.g., model.pth / learned_weights.pth)"}
-  - {name: config_properties, type: Data, description: "Path to config.properties (TorchServe server config)"}
-  - {name: model_name, type: String, default: "gptneox", description: "MAR name (and InferenceService model id)"}
-  - {name: model_version, type: String, default: "1.0", description: "MAR version"}
+  - {name: config_properties, type: Data, description: "Path to config.properties"}
+  - {name: model_name, type: String, default: "gptneox", description: "Name for the MAR"}
+  - {name: model_version, type: String, default: "1.0", description: "Version for the MAR"}
 outputs:
-  - {name: mar_file_out, type: String, description: "Output directory containing {model_name}.mar and a config/ subdir"}
+  - {name: mar_file_out, type: String, description: "Output directory containing {model_name}.mar and config/"}
   - {name: mar_creation_log, type: String, description: "JSON log with details"}
 implementation:
   container:
@@ -20,72 +20,81 @@ implementation:
       - sh
       - -c
       - |
-        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet torch-model-archiver || \
-        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet torch-model-archiver --user
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install -q torch-model-archiver || \
+        PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install -q torch-model-archiver --user
         exec "$0" "$@"
       - python3
       - -u
       - -c
       - |
-        import os, sys, json, shutil, argparse, subprocess
+        import os
+        import sys
+        import json
+        import shutil
+        import argparse
+        import subprocess
         from datetime import datetime
 
-        def must(path, label):
+        def ensure_exists(path, label):
             if not os.path.exists(path):
                 raise FileNotFoundError(f"{label} not found: {path}")
             return path
 
-        def stage(src, dst_name):
-            if not src: return None
-            must(src, "File")
-            dst = os.path.join(os.getcwd(), dst_name)
-            shutil.copy2(src, dst)
-            return dst
+        def stage_file(src_path, dst_name):
+            dst_path = os.path.join(os.getcwd(), dst_name)
+            shutil.copy2(src_path, dst_path)
+            return dst_path
 
-        def create_model_py_and_config(tokenizer_path):
+        def generate_model_files(tokenizer_path):
+            # Use nesy_factory builder to produce model.py and model_config.json
             from nesy_factory.language_model.gptneox import GPTNeoXBuilder
             builder = GPTNeoXBuilder({})
-            gen_weights = os.path.abspath("discard_weights.pth")   # placeholder; will not be packaged
-            gen_cfg = os.path.abspath("model_config.json")
+            generated_weights = os.path.abspath("discard_weights.pth")
+            generated_cfg = os.path.abspath("model_config.json")
             out_py = os.path.abspath("model.py")
             res = builder.run(
                 tokenizer_json=os.path.abspath(tokenizer_path),
                 n_layers=12,
                 layer_pattern="",
-                model_weights_out=gen_weights,
-                model_config_out=gen_cfg,
+                model_weights_out=generated_weights,
+                model_config_out=generated_cfg,
                 model_py_out=out_py,
             )
-            return out_py, gen_cfg
+            return out_py, generated_cfg
 
-        def create_mar(model_name, model_version, model_file, handler_path, weights_path, extras, out_dir):
+        def create_mar(model_name, model_version, model_py, handler_py, weights_path, extra_files, out_dir):
             os.makedirs(out_dir, exist_ok=True)
             cmd = [
                 "torch-model-archiver",
                 "--model-name", model_name,
                 "--version", model_version,
-                "--model-file", model_file,
+                "--model-file", model_py,
                 "--serialized-file", weights_path,
-                "--handler", handler_path,
+                "--handler", handler_py,
                 "--export-path", out_dir,
                 "--force",
             ]
-            if extras:
-                cmd += ["--extra-files", ",".join(extras)]
-            print("MAR command:\n  " + " ".join(cmd))
+            if extra_files:
+                cmd += ["--extra-files", ",".join(extra_files)]
+            print("MAR command:")
+            print("  " + " ".join(cmd))
             res = subprocess.run(cmd, capture_output=True, text=True)
             if res.returncode != 0:
-                print("STDOUT:\n", res.stdout)
-                print("STDERR:\n", res.stderr)
+                print("MAR creation failed")
+                print("STDOUT-->")
+                print(res.stdout)
+                print("STDERR-->")
+                print(res.stderr)
                 raise RuntimeError("torch-model-archiver failed")
             mar_path = os.path.join(out_dir, f"{model_name}.mar")
             if not os.path.exists(mar_path):
-                raise RuntimeError("MAR not found: " + mar_path)
+                raise RuntimeError("MAR not found at expected path: " + mar_path)
+            print("MAR created at:", mar_path)
             return mar_path, res.stdout
 
         def main():
             ap = argparse.ArgumentParser()
-            ap.add_argument("--handler_file", required=True)       # dir
+            ap.add_argument("--handler_file", required=True)       # dir containing handler.py
             ap.add_argument("--tokenizer_json", required=True)     # file
             ap.add_argument("--model_pth_file", required=True)     # file
             ap.add_argument("--config_properties", required=True)  # file
@@ -96,59 +105,58 @@ implementation:
             args = ap.parse_args()
 
             log = {
-              "timestamp": datetime.now().isoformat(),
-              "model_name": args.model_name,
-              "model_version": args.model_version,
-              "status": "starting",
-              "steps": []
+                "timestamp": datetime.now().isoformat(),
+                "model_name": args.model_name,
+                "model_version": args.model_version,
+                "status": "starting",
+                "steps": []
             }
 
             try:
-              # 1) Validate inputs
-              handler_py = must(os.path.join(args.handler_file, "handler.py"), "handler.py")
-              tok_json = must(args.tokenizer_json, "tokenizer.json")
-              weights = must(args.model_pth_file, "model.pth")
-              cfg_props = must(args.config_properties, "config.properties")
-              print(f"Inputs OK\n  handler: {handler_py}\n  weights: {weights}\n  tokenizer: {tok_json}\n  config.properties: {cfg_props}")
-              log["steps"].append({"step":1,"action":"validate_inputs","status":"success"})
+                handler_py = ensure_exists(os.path.join(args.handler_file, "handler.py"), "handler.py")
+                tokenizer_path = ensure_exists(args.tokenizer_json, "tokenizer.json")
+                weights_path = ensure_exists(args.model_pth_file, "model.pth/.pth")
+                cfg_props_path = ensure_exists(args.config_properties, "config.properties")
+                print("Inputs OK")
+                log["steps"].append({"step": 1, "action": "validate_inputs", "status": "success"})
 
-              # 2) Stage tokenizer.json so name is predictable inside MAR
-              staged_tok = stage(tok_json, "tokenizer.json")
-              print(f"Staged tokenizer: {staged_tok}")
+                # Stage tokenizer.json inside CWD with predictable name
+                staged_tok = stage_file(tokenizer_path, "tokenizer.json")
+                print("Staged tokenizer:", staged_tok)
 
-              # 3) Generate model.py and model_config.json from nesy_factory builder
-              model_py, model_cfg = create_model_py_and_config(staged_tok)
-              print(f"Generated model.py: {model_py}\nGenerated model_config.json: {model_cfg}")
-              extras = [staged_tok, model_cfg]
-              log["steps"].append({"step":2,"action":"generate_model_files","status":"success","model_py":model_py,"extras":extras})
+                # Generate model.py and model_config.json via builder
+                model_py, model_cfg = generate_model_files(staged_tok)
+                print("Generated model.py:", model_py)
+                print("Generated model_config.json:", model_cfg)
+                extras = [staged_tok, model_cfg]
+                log["steps"].append({"step": 2, "action": "generate_model_files", "status": "success", "extras": extras})
 
-              # 4) Create MAR (handler + weights + tokenizer.json + model_config.json)
-              out_dir = args.mar_file_out
-              mar_path, stdout = create_mar(args.model_name, args.model_version, model_py, handler_py, weights, extras, out_dir)
-              print("MAR created at:", mar_path)
-              log["steps"].append({"step":3,"action":"create_mar","status":"success","mar_path":mar_path})
+                # Create MAR
+                out_dir = args.mar_file_out
+                mar_path, stdout_text = create_mar(args.model_name, args.model_version, model_py, handler_py, weights_path, extras, out_dir)
+                log["steps"].append({"step": 3, "action": "create_mar", "status": "success", "mar_path": mar_path})
 
-              # 5) Copy config.properties into output/config/ (NOT inside the MAR)
-              cfg_dir = os.path.join(out_dir, "config")
-              os.makedirs(cfg_dir, exist_ok=True)
-              shutil.copy2(cfg_props, os.path.join(cfg_dir, "config.properties"))
-              print("Staged config/config.properties next to MAR.")
-              log["steps"].append({"step":4,"action":"stage_config_properties","status":"success","config_dir":cfg_dir})
+                # Stage config/config.properties NEXT TO the MAR (not inside)
+                cfg_dir = os.path.join(out_dir, "config")
+                os.makedirs(cfg_dir, exist_ok=True)
+                shutil.copy2(cfg_props_path, os.path.join(cfg_dir, "config.properties"))
+                print("Staged config/config.properties")
+                log["steps"].append({"step": 4, "action": "stage_config_properties", "status": "success", "config_dir": cfg_dir})
 
-              log["status"] = "completed"
-              log["mar_file_path"] = mar_path
-              log["note"] = "Upload mar_file_out/ to MinIO root; it already contains model-store/{model_name}.mar and config/config.properties"
+                log["status"] = "completed"
+                log["mar_file_path"] = mar_path
+                log["note"] = "Upload mar_file_out/ to MinIO root. It contains model-store/{name}.mar and config/config.properties."
 
             except Exception as e:
-              log["status"] = "failed"
-              log["error"] = str(e)
-              print("ERROR:", e, file=sys.stderr)
-              sys.exit(1)
+                log["status"] = "failed"
+                log["error"] = str(e)
+                print("ERROR:", str(e), file=sys.stderr)
+                sys.exit(1)
             finally:
-              os.makedirs(os.path.dirname(args.mar_creation_log) or ".", exist_ok=True)
-              with open(args.mar_creation_log, "w", encoding="utf-8") as f:
-                json.dump(log, f, indent=2)
-              print("Log saved:", args.mar_creation_log)
+                os.makedirs(os.path.dirname(args.mar_creation_log) or ".", exist_ok=True)
+                with open(args.mar_creation_log, "w", encoding="utf-8") as f:
+                    json.dump(log, f, indent=2)
+                print("Log saved:", args.mar_creation_log)
 
         if __name__ == "__main__":
             main()
