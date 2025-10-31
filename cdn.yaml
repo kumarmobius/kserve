@@ -8,7 +8,7 @@ inputs:
 outputs:
   - {name: handler_file, type: String, description: "Downloaded handler.py file"}
   - {name: pth_file, type: Model, description: "Downloaded trained_model.pth model file"}
-  - {name: config_file, type: Data, description: "Downloaded config.properties file"}
+  - {name: config_file, type: String, description: "Downloaded config.properties file"}
   - {name: tokenizer_file, type: Model, description: "Downloaded tokenizer.json file"}
 implementation:
   container:
