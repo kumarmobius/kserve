@@ -15,7 +15,7 @@ outputs:
   - {name: mar_creation_log, type: String, description: "JSON log with details"}
 implementation:
   container:
-    image: gurpreetgandhi/nesy-factory:v24-gpu
+    image: gurpreetgandhi/nesy-factory:v24
     command:
       - sh
       - -c
