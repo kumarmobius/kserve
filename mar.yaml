@@ -36,7 +36,6 @@ implementation:
             return path
 
         def stage(src, dst_name):
-            """Copy a file into CWD with a fixed name (predictable inside MAR)."""
             if not src: return None
             must(src, "File")
             dst = os.path.join(os.getcwd(), dst_name)
@@ -44,10 +43,6 @@ implementation:
             return dst
 
         def create_model_py_and_config(tokenizer_path):
-            """
-            Use nesy_factory GPTNeoXBuilder to generate model.py and model_config.json.
-            We IGNORE the builder's generated weights and use the user's trained weights file.
-            """
             from nesy_factory.language_model.gptneox import GPTNeoXBuilder
             builder = GPTNeoXBuilder({})
             gen_weights = os.path.abspath("discard_weights.pth")   # placeholder; will not be packaged
