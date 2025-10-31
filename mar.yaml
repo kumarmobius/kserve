@@ -1,4 +1,4 @@
-name: GPTNeoX MAR File Creator
+name: GPTNeoX MAR File
 description: |
   Creates a TorchServe .mar using handler.py, model.pth, tokenizer.json. 
   Generates model.py (+ model_config.json) via nesy_factory.language_model.gptneox.GPTNeoXBuilder.
@@ -15,7 +15,7 @@ outputs:
   - {name: mar_creation_log, type: String, description: "JSON log with details"}
 implementation:
   container:
-    image: nikhilv215/nesy-factory:v22
+    image: gurpreetgandhi/nesy-factory:v24-gpu
     command:
       - sh
       - -c
